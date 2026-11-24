@@ -4,6 +4,9 @@ pydantic-settings
 sqlalchemy
 psycopg2-binary
 alembic
+beautifulsoup4
+celery
+redis
 pytest
 httpx
 ruff

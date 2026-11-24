@@ -2,8 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.models.product import PriceHistory, Product
+from app.schemas.product import (
+    PriceHistoryResponse,
+    ProductCreate,
+    ProductResponse,
+    ProductUpdate,
+)
+from app.tasks.scraper_tasks import check_product_price
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -75,3 +81,37 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
 
     db.delete(product)
     db.commit()
+
+
+@router.post("/{product_id}/check", status_code=status.HTTP_202_ACCEPTED)
+def trigger_price_check(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Producto no encontrado.",
+        )
+
+    task = check_product_price.delay(product.id)
+    return {
+        "status": "queued",
+        "task_id": task.id,
+        "product_id": product.id,
+    }
+
+
+@router.get("/{product_id}/history", response_model=list[PriceHistoryResponse])
+def get_price_history(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Producto no encontrado.",
+        )
+
+    return (
+        db.query(PriceHistory)
+        .filter(PriceHistory.product_id == product_id)
+        .order_by(PriceHistory.recorded_at.desc())
+        .all()
+    )
